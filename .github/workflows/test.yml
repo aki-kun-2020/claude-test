@@ -33,3 +33,9 @@ jobs:
         with:
           name: test-results-py${{ matrix.python-version }}
           path: test-results.xml
+
+      - name: Test Summary
+        if: always()
+        uses: test-summary/action@v2
+        with:
+          paths: test-results.xml
