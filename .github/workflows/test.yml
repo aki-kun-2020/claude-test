@@ -34,8 +34,42 @@ jobs:
           name: test-results-py${{ matrix.python-version }}
           path: test-results.xml
 
-      - name: Test Summary
+      - name: Test Checklist
         if: always()
-        uses: test-summary/action@v2
-        with:
-          paths: test-results.xml
+        run: |
+          python - <<'PYEOF'
+          import xml.etree.ElementTree as ET
+
+          tree = ET.parse("test-results.xml")
+          suite = tree.find(".//testsuite")
+          total = suite.get("tests", "0")
+          failures = suite.get("failures", "0")
+          errors = suite.get("errors", "0")
+          passed = int(total) - int(failures) - int(errors)
+
+          lines = []
+          lines.append("## Test Results (Python ${{ matrix.python-version }})")
+          lines.append(f"**{passed} passed** / {failures} failed / {total} total")
+          lines.append("")
+
+          current_class = ""
+          for tc in tree.iter("testcase"):
+              cls = tc.get("classname", "")
+              name = tc.get("name", "")
+              failure = tc.find("failure")
+              error = tc.find("error")
+
+              if cls != current_class:
+                  current_class = cls
+                  lines.append(f"### {cls}")
+
+              if failure is not None:
+                  lines.append(f"- [ ] :x: `{name}` — {failure.get('message', '')}")
+              elif error is not None:
+                  lines.append(f"- [ ] :warning: `{name}` — {error.get('message', '')}")
+              else:
+                  lines.append(f"- [x] `{name}`")
+
+          with open("$GITHUB_STEP_SUMMARY", "a") as f:
+              f.write("\n".join(lines) + "\n")
+          PYEOF
