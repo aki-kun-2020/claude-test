@@ -25,7 +25,7 @@ jobs:
         run: pip install pytest
 
       - name: Run tests
-        run: python -m pytest test_calculator.py -v --junit-xml=test-results.xml
+        run: python -m pytest test_calculator.py -v --junit-xml=test-results.xml -o "junit_suite_name=calculator"
 
       - name: Upload test results
         if: always()
@@ -38,9 +38,22 @@ jobs:
         if: always()
         run: |
           python - <<'PYEOF'
+          import ast
           import os
           import xml.etree.ElementTree as ET
 
+          # テストファイルからdocstringを抽出
+          docstrings = {}
+          for source_file in ["test_calculator.py"]:
+              with open(source_file) as f:
+                  tree_ast = ast.parse(f.read())
+              for node in ast.walk(tree_ast):
+                  if isinstance(node, ast.FunctionDef) and node.name.startswith("test_"):
+                      doc = ast.get_docstring(node)
+                      if doc:
+                          docstrings[node.name] = doc
+
+          # JUnit XMLを解析
           tree = ET.parse("test-results.xml")
           suite = tree.find(".//testsuite")
           total = suite.get("tests", "0")
@@ -60,17 +73,28 @@ jobs:
               name = tc.get("name", "")
               failure = tc.find("failure")
               error = tc.find("error")
+              desc = docstrings.get(name, "")
 
               if cls != current_class:
                   current_class = cls
                   lines.append(f"### {cls}")
 
+              label = f"`{name}`"
+              if desc:
+                  label += f" — {desc}"
+
               if failure is not None:
-                  lines.append(f"- [ ] :x: `{name}` — {failure.get('message', '')}")
+                  msg = failure.get("message", "")
+                  lines.append(f"- [ ] :x: {label}")
+                  if msg:
+                      lines.append(f"  > {msg}")
               elif error is not None:
-                  lines.append(f"- [ ] :warning: `{name}` — {error.get('message', '')}")
+                  msg = error.get("message", "")
+                  lines.append(f"- [ ] :warning: {label}")
+                  if msg:
+                      lines.append(f"  > {msg}")
               else:
-                  lines.append(f"- [x] `{name}`")
+                  lines.append(f"- [x] {label}")
 
           summary_path = os.environ.get("GITHUB_STEP_SUMMARY", "")
           with open(summary_path, "a") as f:
